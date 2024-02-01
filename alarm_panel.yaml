@@ -178,7 +178,7 @@ key_collector:
     back_keys: "*"
     clear_keys: "C"
     allowed_keys: "0123456789ABCD"
-    timeout: 5s
+    timeout: 10s
     on_progress:
       then:
         - script.execute:
@@ -192,7 +192,7 @@ key_collector:
     on_result:
       then:
         - logger.log:
-            format: "AAA input result: '%s', started by '%c', ended by '%c'"
+            format: "input result: '%s', started by '%c', ended by '%c'"
             args: [ 'x.c_str()', "(start == 0 ? '~' : start)", "(end == 0 ? '~' : end)" ]
         - if:
             condition:
