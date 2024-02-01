@@ -1,0 +1,219 @@
+esphome:
+  name: alarm_panel
+  project:
+    name: "alarm_panel"
+    version: "0.0.1"
+  # on_boot:
+  #   then:
+  #     - lambda: |-
+  #         id(mydisplay).print(0, 10, "Alarm Panel");
+
+esp32:
+  board: az-delivery-devkit-v4
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret alarm_panel_encrypt_key
+  on_client_connected:
+    - logger.log:
+        format: "Client %s connected to API with IP %s"
+        args: ["client_info.c_str()", "client_address.c_str()"]
+
+ota:
+  password: ""
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+
+globals:
+  # - id: translated_state
+  #   type: std::string
+  - id: pincode
+    type: std::string
+    restore_value: true
+    max_restore_data_length: 4
+    initial_value: ''
+  - id: targetted_state
+    type: std::string
+  # - id: translated_targetted_state
+  #   type: std::string
+  - id: is_code_required
+    type: 'bool'
+
+script:
+  - id: call_service_arm
+    parameters:
+      target_mode: string
+    then:
+      - logger.log:
+          format: "sending arming command '%s'"
+          args: [ "target_mode.c_str()" ]
+      - homeassistant.service:
+          service: alarmo.arm
+          data:
+            entity_id: alarm_control_panel.alarmo
+            mode: !lambda return target_mode.c_str();
+  - id: call_service_disarm
+    parameters:
+      pincode_tosend: string
+    then:
+      - logger.log:
+          format: "sending disarming command with code '%s'"
+          args: [ pincode_tosend.c_str() ]
+      - homeassistant.service:
+          service: alarmo.disarm
+          data:
+            entity_id: alarm_control_panel.alarmo
+            code: !lambda return pincode_tosend.c_str();
+  - id: handle_input
+    parameters:
+      input_value: string
+    then:
+      - logger.log:
+          format: "handle_input: '%s'"
+          args: [ input_value.c_str() ]
+      # - if:
+      #     condition:
+      #       lambda: |-
+      #         return input_value.c_str() == "A" || input_value == "B" || input_value == "C";
+      #     then:
+      - lambda: |-
+          if (input_value == "A") {
+            id(targetted_state) = "armed_away";
+            id(pincode) = "";
+          } else if (input_value == "B") {
+            id(targetted_state) = "armed_home";
+            id(pincode) = "";
+          } else if (input_value == "C") {
+            id(targetted_state) = "armed_night";
+            id(pincode) = "";
+          } else {
+            id(targetted_state) = "";
+            id(pincode) = input_value.c_str();
+          }
+      - logger.log:
+          format: "targetted_state: '%s' - pincode: '%s'"
+          args: [ id(targetted_state).c_str(), id(pincode).c_str() ]
+text_sensor:
+  - platform: homeassistant
+    name: "alarm state"
+    id: alarm_state
+    entity_id: alarm_control_panel.alarmo
+    on_value:
+      then:
+        - lambda: |-
+            ESP_LOGD("main", "alarmo value changes to %s", x.c_str());
+            if (x == "disarmed" || x == "arming") {
+              id(is_code_required) = false;
+            } else {
+              id(is_code_required) = true;
+            }
+    # filters:
+    # - substitute:
+    #   - "disarmed -> Désarmé"
+    #   - "armed_home -> Armé maison"
+    #   - "armed_away -> Armé absent"
+    #   - "armed_night -> Armé nuit"
+    #   - "triggered -> Alarme déclenchée !"
+
+i2c:
+  sda: 21
+  scl: 22
+  #workaround for warning message "Component xxxxxx took a long time for an operation"
+  #https://github.com/esphome/issues/issues/4714#issuecomment-1648656912
+  #https://github.com/esphome/issues/issues/4717
+  frequency: 400kHz
+  scan: true
+font:
+  # gfonts://family[@weight]
+  - file: "gfonts://Roboto"
+    id: roboto
+    size: 18
+
+display:
+  - platform: ssd1306_i2c
+    id: mydisplay
+    model: "SH1106 128x64"
+    lambda: |-
+      it.printf(0, 6, id(roboto), "%s", id(alarm_state).state.c_str());
+      if (id(is_code_required)) {
+        it.printf(0, 22, id(roboto), "Code: %s", id(pincode).c_str());
+      } 
+      if (id(targetted_state).length() > 0) {
+        it.printf(0, 38, id(roboto), "Target: %s", id(targetted_state).c_str());
+      }
+
+
+matrix_keypad:
+  id: mykeypad
+  rows:
+    - pin: 2
+    - pin: 0
+    - pin: 4
+    - pin: 16
+  columns:
+    - pin: 17
+    - pin: 5
+    - pin: 18
+    - pin: 19
+  keys: "123A456B789C*0#D"
+  has_diodes: false
+
+key_collector:
+  - id: pincode_reader
+    source_id: mykeypad
+    min_length: 1
+    max_length: 4
+    end_keys: "#"
+    end_key_required: true
+    back_keys: "*"
+    clear_keys: "C"
+    allowed_keys: "0123456789ABCD"
+    timeout: 5s
+    on_progress:
+      then:
+        - script.execute:
+            id: handle_input
+            input_value: !lambda return x.c_str();
+        # - lambda: |-
+        #     id(pincode) = x;
+        - logger.log:
+            format: "input progress: '%s', started by '%c'"
+            args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
+    on_result:
+      then:
+        - logger.log:
+            format: "AAA input result: '%s', started by '%c', ended by '%c'"
+            args: [ 'x.c_str()', "(start == 0 ? '~' : start)", "(end == 0 ? '~' : end)" ]
+        - if:
+            condition:
+              lambda: |-
+                return id(targetted_state).length() == 0;
+            then:
+              - script.execute:
+                  id: call_service_disarm
+                  pincode_tosend: !lambda return x.c_str();
+            else:
+              - script.execute:
+                  id: call_service_arm
+                  target_mode: !lambda return x.c_str();
+        - logger.log:
+            format: "sending arming command '%s', with code '%s'"
+            args: [ id(targetted_state).c_str(), id(pincode).c_str() ]
+
+    on_timeout:
+      then:
+        - lambda: |-
+            id(pincode) = x;
+        - logger.log:
+            format: "input timeout: '%s', started by '%c'"
+            args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
