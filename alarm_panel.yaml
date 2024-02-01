@@ -87,14 +87,18 @@ script:
       #         return input_value.c_str() == "A" || input_value == "B" || input_value == "C";
       #     then:
       - lambda: |-
-          if (input_value == "A") {
-            id(targetted_state) = "armed_away";
+          if(input_value.length() == 0) {
+            return;
+          }
+          char lastChar = input_value.substr(input_value.length() - 1, 1)[0];
+          if (lastChar == 'A') {
+            id(targetted_state) = "away";
             id(pincode) = "";
-          } else if (input_value == "B") {
-            id(targetted_state) = "armed_home";
+          } else if (lastChar == 'B') {
+            id(targetted_state) = "home";
             id(pincode) = "";
-          } else if (input_value == "C") {
-            id(targetted_state) = "armed_night";
+          } else if (lastChar == 'C') {
+            id(targetted_state) = "night";
             id(pincode) = "";
           } else {
             id(targetted_state) = "";
@@ -174,11 +178,11 @@ key_collector:
     min_length: 1
     max_length: 4
     end_keys: "#"
-    end_key_required: true
+    end_key_required: false
     back_keys: "*"
     clear_keys: "C"
     allowed_keys: "0123456789ABCD"
-    timeout: 10s
+    timeout: 5s
     on_progress:
       then:
         - script.execute:
@@ -205,7 +209,7 @@ key_collector:
             else:
               - script.execute:
                   id: call_service_arm
-                  target_mode: !lambda return x.c_str();
+                  target_mode: !lambda return id(targetted_state).c_str();
 
     on_timeout:
       then:
