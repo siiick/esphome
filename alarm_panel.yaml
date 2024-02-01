@@ -1,7 +1,7 @@
 esphome:
   name: alarm_panel
   project:
-    name: "alarm_panel"
+    name: "esphomie.alarm_panel"
     version: "0.0.1"
   # on_boot:
   #   then:
