@@ -206,9 +206,6 @@ key_collector:
               - script.execute:
                   id: call_service_arm
                   target_mode: !lambda return x.c_str();
-        - logger.log:
-            format: "sending arming command '%s', with code '%s'"
-            args: [ id(targetted_state).c_str(), id(pincode).c_str() ]
 
     on_timeout:
       then:
