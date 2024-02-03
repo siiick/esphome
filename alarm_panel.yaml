@@ -2,7 +2,7 @@ esphome:
   name: alarm_panel
   project:
     name: "esphomie.alarm_panel"
-    version: "0.0.1"
+    version: "0.1.0"
   # on_boot:
   #   then:
   #     - lambda: |-
@@ -102,7 +102,7 @@ script:
             id(pincode) = "";
           } else {
             id(targetted_state) = "";
-            id(pincode) = input_value.c_str();
+            id(pincode) = input_value;
           }
       - logger.log:
           format: "targetted_state: '%s' - pincode: '%s'"
@@ -118,8 +118,12 @@ text_sensor:
             ESP_LOGD("main", "alarmo value changes to %s", x.c_str());
             if (x == "disarmed" || x == "arming") {
               id(is_code_required) = false;
+              ESP_LOGD("main", "is_code_required value changes to false");
+
             } else {
               id(is_code_required) = true;
+              ESP_LOGD("main", "is_code_required value changes to true");
+
             }
     # filters:
     # - substitute:
@@ -128,6 +132,13 @@ text_sensor:
     #   - "armed_away -> Armé absent"
     #   - "armed_night -> Armé nuit"
     #   - "triggered -> Alarme déclenchée !"
+
+output:
+  - platform: ledc
+    pin: GPIO32
+    id: rtttl_out
+rtttl:
+  output: rtttl_out
 
 i2c:
   sda: 21
@@ -152,7 +163,7 @@ display:
       if (id(is_code_required)) {
         it.printf(0, 22, id(roboto), "Code: %s", id(pincode).c_str());
       } 
-      if (id(targetted_state).length() > 0) {
+      if (id(is_code_required) == false && id(targetted_state).length() > 0) {
         it.printf(0, 38, id(roboto), "Target: %s", id(targetted_state).c_str());
       }
 
@@ -190,11 +201,17 @@ key_collector:
             input_value: !lambda return x.c_str();
         # - lambda: |-
         #     id(pincode) = x;
+        - rtttl.play: !lambda |-
+            if (x.length() == 0) { return "short:d=4,o=5,b=100:16f#6,16e6"; }
+            else { return "short:d=4,o=5,b=100:16e6"; }
         - logger.log:
             format: "input progress: '%s', started by '%c'"
             args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
     on_result:
       then:
+        - script.execute:
+            id: handle_input
+            input_value: !lambda return x.c_str();
         - logger.log:
             format: "input result: '%s', started by '%c', ended by '%c'"
             args: [ 'x.c_str()', "(start == 0 ? '~' : start)", "(end == 0 ? '~' : end)" ]
@@ -206,10 +223,14 @@ key_collector:
               - script.execute:
                   id: call_service_disarm
                   pincode_tosend: !lambda return x.c_str();
+              - logger.log:
+                  format: "disarm command sent"
             else:
               - script.execute:
                   id: call_service_arm
                   target_mode: !lambda return id(targetted_state).c_str();
+              - logger.log:
+                  format: "arm command sent"
 
     on_timeout:
       then:
