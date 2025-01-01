@@ -1,0 +1,160 @@
+esphome:
+  name: esp-climate
+
+esp32:
+  board: az-delivery-devkit-v4
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret alarm_panel_encrypt_key
+  # actions:
+  #   - action: start_boiler
+  #     then:
+  #       - switch.turn_on: switch_boiler
+  #       # - delay: 5m
+  #       # - switch.turn_off: switch_boiler
+  #   - action: stop_boiler
+  #     then:
+  #       - switch.turn_off: switch_boiler
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "climate Fallback Hotspot"
+    password: "OLGgKR0EZLAW"
+
+captive_portal:
+
+
+i2c:
+  sda: 21
+  scl: 22
+  #workaround for warning message "Component xxxxxx took a long time for an operation"
+  #https://github.com/esphome/issues/issues/4714#issuecomment-1648656912
+  #https://github.com/esphome/issues/issues/4717
+  frequency: 400kHz
+  scan: true
+font:
+  # gfonts://family[@weight]
+  - file: "gfonts://Roboto"
+    id: roboto
+    size: 16
+  - file: "gfonts://Material+Symbols+Outlined"
+    id: "icon50"
+    size: 50
+    glyphs: ["\U0000ef55", "\U0000f16d"]
+display:
+  - platform: ssd1306_i2c
+    id: mydisplay
+    model: "SH1106 128x64"
+    pages:
+    - id: graph_page
+      lambda: |-
+        if (id(boiler_state)) {
+          it.print(0, 0, id(icon50), "\U0000ef55");
+          it.print(50, 20, id(roboto), "chauffe");
+        } else {
+          it.print(0, 0, id(icon50), "\U0000f16d");
+          it.print(50, 20, id(roboto), "arret");
+        }
+
+switch:
+  - platform: gpio
+    pin:
+      number: GPIO17
+      inverted: true
+    id: switch_boiler
+    name: "chaudiere"
+    on_turn_on:
+    - globals.set:
+        id: boiler_state
+        value: 'true'
+    # - component.update: mydisplay
+    on_turn_off:
+    - globals.set:
+        id: boiler_state
+        value: 'false'
+    # - component.update: mydisplay
+
+# binary_sensor:
+#   - platform: gpio
+#     pin: GPIO16
+#     name: "manual switch"
+#     device_class: power
+#     on_press:
+#       then:
+#         - switch.toggle: switch_boiler
+
+sensor:
+  - platform: rotary_encoder
+    id: button
+    name: "Rotary Encoder"
+    pin_a: GPIO25
+    pin_b: GPIO33
+    # filters:
+    #   debounce: 30ms
+    on_anticlockwise:
+      - logger.log:
+          format: "anticlockwise"
+          level: "INFO"
+      - display_menu.up: menu
+    on_clockwise:
+      - logger.log:
+          format: "clockwise"
+          level: "INFO"
+      - display_menu.down: menu
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO32
+      # mode: INPUT_PULLUP
+      inverted: true
+    name: "Button"
+    on_click:
+      - logger.log:
+          format: "Button pressed"
+          level: "INFO"
+      # - if:
+      #     condition:
+      #       display_menu.is_active: menu
+      #     then:
+      #       - display_menu.enter: menu
+      #     else:
+      #       - display_menu.show:  menu
+
+
+# Example configuration entry
+
+graphical_display_menu:
+  id: menu
+  display: mydisplay
+  font: roboto
+  on_redraw:
+    then:
+      component.update: mydisplay
+  # active: false
+  mode: rotary
+  items:
+    - type: Label
+      text: Menu Item 1
+    - type: Label
+      text: Menu Item 2
+
+globals:
+  - id: boiler_state
+    type: bool
+    restore_value: no
+    initial_value: 'false'
